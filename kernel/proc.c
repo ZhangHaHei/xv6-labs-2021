@@ -654,3 +654,16 @@ procdump(void)
     printf("\n");
   }
 }
+
+
+
+int proc_num()
+{
+  struct proc *p;
+  int n = 0;
+
+  for(p = proc; p < &proc[NPROC]; p++){
+    n += p->state != UNUSED;
+  }
+  return n;
+}
