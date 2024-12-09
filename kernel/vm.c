@@ -161,7 +161,10 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 
 // Remove npages of mappings starting from va. va must be
 // page-aligned. The mappings must exist.
-// Optionally free the physical memory.
+// Optionally free the physical memory.uvmunmap 
+// 函数的作用是解除指定虚拟地址范围的映射，并且可以选择释放相关的物理内存。
+//这是一个典型的解除页表映射的操作，通常用于用户虚拟内存的释放或清理。
+//该函数确保虚拟地址的对齐，确保所有页表项有效，并根据需要释放物理内存。
 void
 uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 {
@@ -202,6 +205,7 @@ uvmcreate()
 // Load the user initcode into address 0 of pagetable,
 // for the very first process.
 // sz must be less than a page.
+//函数的作用是初始化一个用户进程的虚拟内存，特别是将用户程序的启动代码（src）加载到虚拟地址空间中的地址 0 处，并为它设置一个页表项。
 void
 uvminit(pagetable_t pagetable, uchar *src, uint sz)
 {
@@ -263,6 +267,7 @@ uvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 
 // Recursively free page-table pages.
 // All leaf mappings must already have been removed.
+//函数用于递归地释放页表中的每一页，特别是在递归释放多级页表的情况下。
 void
 freewalk(pagetable_t pagetable)
 {
@@ -349,10 +354,13 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
   uint64 n, va0, pa0;
 
   while(len > 0){
+    // 将虚拟地址 dstva 向下对齐到页边界
     va0 = PGROUNDDOWN(dstva);
+    // 获取虚拟地址 va0 在页表中的物理地址
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
+    // 计算该页剩余的字节数, 防止dstva - va0这部分中 有内容
     n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;
@@ -430,5 +438,33 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return 0;
   } else {
     return -1;
+  }
+}
+// 打印虚拟地址到物理地址的映射
+void
+vmprint(pagetable_t pagetable){
+  printf("page table %p\n", pagetable);
+
+  for(int i = 0; i < 512; i++ ){
+    pte_t top_pte = pagetable[i];
+    if(PTE_FLAGS(top_pte) & PTE_V){
+      pagetable_t top_table = (pagetable_t)PTE2PA(top_pte);
+      printf(".. %d: pte %p pa %p\n", i, top_pte, PTE2PA(top_pte));
+      for(int j = 0; j < 512; j++){
+
+        pte_t midddle_pte = top_table[j];
+        if(PTE_FLAGS(midddle_pte) & PTE_V){
+          pagetable_t middle_table = (pagetable_t)PTE2PA(midddle_pte);
+          printf(".. .. %d: pte %p pa %p\n", j, midddle_pte, PTE2PA(midddle_pte));
+
+          for(int k = 0; k < 512; k++){
+            pte_t leaf_pte = middle_table[k];
+            if(PTE_FLAGS(leaf_pte) & PTE_V){
+              printf(".. .. .. %d: pte %p pa %p\n", k, leaf_pte, PTE2PA(leaf_pte));
+            } 
+          }
+        }
+      }
+    }
   }
 }
