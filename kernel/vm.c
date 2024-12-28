@@ -4,6 +4,7 @@
 #include "elf.h"
 #include "riscv.h"
 #include "defs.h"
+#include "proc.h"
 #include "fs.h"
 
 /*
@@ -349,6 +350,9 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
   uint64 n, va0, pa0;
 
   while(len > 0){
+    if(uvmcheckcowpage(dstva))
+      uvmcowcopy(dstva);
+
     va0 = PGROUNDDOWN(dstva);
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
@@ -436,8 +440,32 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 
 int uvmcheckcowpage(uint64 va){
   pte_t* pte;
-  // struct* p = myproc();
   struct proc * p = myproc(); 
  
-  return va <  p->sz;
+  return va < p->sz
+        && ((pte = walk(p->pagetable, va, 0)) != 0)
+        && (*pte & PTE_V)
+        && (*pte & PTE_COW);
 }
+
+int uvmcowcopy(uint64 va){
+  pte_t * pte;
+  struct proc*p = myproc();
+
+  if ((pte = walk(p->pagetable, va,0)) == 0)//获取虚拟地址的页表项
+    panic("uvmcowcopy: walk"); 
+  
+  uint64 pa = PTE2PA(*pte);
+  uint64 new_pa = (uint64)kcopy_n_deref((void*)pa);
+  if(new_pa == 0)
+    return -1;
+  *pte |= ((PTE_FLAGS(*pte) | PTE_W) & ~PTE_COW);
+  printf("uvmcowcopy:test");
+  uint64 flags = (PTE_FLAGS(*pte) | PTE_W) & ~PTE_COW;
+  uvmunmap(p->pagetable, PGROUNDDOWN(va), 1, 0);
+  if(mappages(p->pagetable, va, 1, new_pa, flags) == -1)
+    panic("uvmcowcopy: mappage");
+  
+  return 0;
+}
+
